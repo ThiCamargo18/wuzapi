@@ -104,7 +104,12 @@ func postgresDSN(config DatabaseConfig) string {
 
 // ensureSchemaExists creates config.Schema if it doesn't already exist, using
 // a bootstrap connection on the server's default schema (so it works even
-// before the target schema exists).
+// before the target schema exists). Existence is checked first via pg_namespace
+// (a plain catalog read, open to any role) and CREATE SCHEMA is only attempted
+// when actually missing: Postgres enforces the CREATE-on-database privilege for
+// that statement regardless of IF NOT EXISTS, so a role that was only granted
+// USAGE/CREATE on its own pre-existing schema (and nothing at the database
+// level, by design) would otherwise fail here even though there's nothing to do.
 func ensureSchemaExists(config DatabaseConfig) error {
 	if config.Schema == "" || config.Schema == "public" {
 		return nil
@@ -118,6 +123,14 @@ func ensureSchemaExists(config DatabaseConfig) error {
 
 	if err := bootstrap.Ping(); err != nil {
 		return fmt.Errorf("failed to ping postgres database: %w", err)
+	}
+
+	var exists bool
+	if err := bootstrap.Get(&exists, "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", config.Schema); err != nil {
+		return fmt.Errorf("failed to check existence of schema %q: %w", config.Schema, err)
+	}
+	if exists {
+		return nil
 	}
 
 	if _, err := bootstrap.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %q", config.Schema)); err != nil {
