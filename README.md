@@ -157,6 +157,7 @@ DB_NAME=wuzapi
 DB_HOST=db  # Use 'db' when running with Docker Compose, or 'localhost' for native execution
 DB_PORT=5432
 DB_SSLMODE=false
+DB_SCHEMA=public # Optional: use a non-public schema (e.g. when sharing a Supabase/Postgres instance). Created automatically if missing.
 ```
 
 **For SQLite (default):**

@@ -452,10 +452,7 @@ func main() {
 	config := getDatabaseConfig(exPath, *dataDir)
 	var storeConnStr string
 	if config.Type == "postgres" {
-		storeConnStr = fmt.Sprintf(
-			"user=%s password=%s dbname=%s host=%s port=%s sslmode=%s",
-			config.User, config.Password, config.Name, config.Host, config.Port, config.SSLMode,
-		)
+		storeConnStr = postgresDSN(config)
 		container, err = sqlstore.New(context.Background(), "postgres", storeConnStr, dbLog)
 	} else {
 		storeConnStr = "file:" + filepath.ToSlash(filepath.Join(config.Path, "main.db")) + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)"

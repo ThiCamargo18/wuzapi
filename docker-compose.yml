@@ -15,6 +15,7 @@ services:
       - DB_NAME=${DB_NAME:-wuzapi}
       - DB_HOST=db
       - DB_PORT=${DB_PORT:-5432}
+      - DB_SCHEMA=${DB_SCHEMA:-public}
       - TZ=${TZ:-America/Sao_Paulo}
       - WEBHOOK_FORMAT=${WEBHOOK_FORMAT:-json}
       - SESSION_DEVICE_NAME=${SESSION_DEVICE_NAME:-WuzAPI}

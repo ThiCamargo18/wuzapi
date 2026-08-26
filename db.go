@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -21,7 +23,12 @@ type DatabaseConfig struct {
 	Name     string
 	Path     string
 	SSLMode  string
+	Schema   string
 }
+
+// validSchemaName restricts DB_SCHEMA to plain identifiers so it can be safely
+// interpolated into DDL (CREATE SCHEMA) and the connection string's search_path.
+var validSchemaName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 func InitializeDatabase(exPath, dataDirFlag string) (*sqlx.DB, error) {
 	config := getDatabaseConfig(exPath, dataDirFlag)
@@ -39,6 +46,7 @@ func getDatabaseConfig(exPath, dataDirFlag string) DatabaseConfig {
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
 	dbSSL := os.Getenv("DB_SSLMODE")
+	dbSchema := strings.TrimSpace(os.Getenv("DB_SCHEMA"))
 
 	sslMode := dbSSL
 	if dbSSL == "true" {
@@ -56,6 +64,7 @@ func getDatabaseConfig(exPath, dataDirFlag string) DatabaseConfig {
 			Password: dbPassword,
 			Name:     dbName,
 			SSLMode:  sslMode,
+			Schema:   dbSchema,
 		}
 	}
 
@@ -71,11 +80,63 @@ func getDatabaseConfig(exPath, dataDirFlag string) DatabaseConfig {
 	}
 }
 
-func initializePostgres(config DatabaseConfig) (*sqlx.DB, error) {
-	dsn := fmt.Sprintf(
+// postgresBaseDSN builds the connection string without a search_path, i.e.
+// connecting to whatever schema is the server default (normally "public").
+// It's used to bootstrap a custom schema before it exists.
+func postgresBaseDSN(config DatabaseConfig) string {
+	return fmt.Sprintf(
 		"user=%s password=%s dbname=%s host=%s port=%s sslmode=%s",
 		config.User, config.Password, config.Name, config.Host, config.Port, config.SSLMode,
 	)
+}
+
+// postgresDSN builds the connection string used for the application pool. When
+// a custom schema is configured, search_path is embedded in the DSN itself
+// (rather than issued as a SET after connecting) so every pooled connection —
+// including ones opened lazily later — gets it applied at the protocol level.
+func postgresDSN(config DatabaseConfig) string {
+	dsn := postgresBaseDSN(config)
+	if config.Schema != "" {
+		dsn = fmt.Sprintf("%s search_path=%s,public", dsn, config.Schema)
+	}
+	return dsn
+}
+
+// ensureSchemaExists creates config.Schema if it doesn't already exist, using
+// a bootstrap connection on the server's default schema (so it works even
+// before the target schema exists).
+func ensureSchemaExists(config DatabaseConfig) error {
+	if config.Schema == "" || config.Schema == "public" {
+		return nil
+	}
+
+	bootstrap, err := sqlx.Open("postgres", postgresBaseDSN(config))
+	if err != nil {
+		return fmt.Errorf("failed to open postgres bootstrap connection: %w", err)
+	}
+	defer bootstrap.Close()
+
+	if err := bootstrap.Ping(); err != nil {
+		return fmt.Errorf("failed to ping postgres database: %w", err)
+	}
+
+	if _, err := bootstrap.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %q", config.Schema)); err != nil {
+		return fmt.Errorf("failed to create schema %q: %w", config.Schema, err)
+	}
+
+	return nil
+}
+
+func initializePostgres(config DatabaseConfig) (*sqlx.DB, error) {
+	if config.Schema != "" && !validSchemaName.MatchString(config.Schema) {
+		return nil, fmt.Errorf("invalid DB_SCHEMA %q: must match ^[a-zA-Z_][a-zA-Z0-9_]*$", config.Schema)
+	}
+
+	if err := ensureSchemaExists(config); err != nil {
+		return nil, err
+	}
+
+	dsn := postgresDSN(config)
 
 	db, err := sqlx.Open("postgres", dsn)
 	if err != nil {
