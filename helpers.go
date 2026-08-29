@@ -703,6 +703,18 @@ func extractFirstURL(text string) string {
 
 	return match
 }
+
+// linkPreviewDomain returns just the host of a URL (e.g. "s.shopee.com.br")
+// for use as the preview card's Title. WhatsApp only renders the big image
+// card when Title is non-empty, so this keeps the card lightweight (no page
+// title/description text) while still showing the image.
+func linkPreviewDomain(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return rawURL
+	}
+	return strings.TrimPrefix(parsed.Host, "www.")
+}
 func fetchOpenGraphData(ctx context.Context, urlStr string) openGraphResult {
 	pageData, _, err := fetchURLBytes(ctx, urlStr, openGraphPageMaxBytes)
 	if err != nil {
