@@ -45,6 +45,7 @@ import (
 
 const (
 	openGraphFetchTimeout    = 5 * time.Second
+	linkPreviewUploadTimeout = 15 * time.Second // Bounds the HQ thumbnail upload to WhatsApp's media servers
 	fetchImageMaxBytes       = 16 * 1024 * 1024  // 16MB
 	fetchVideoMaxBytes       = 100 * 1024 * 1024 // 100MB
 	fetchAudioMaxBytes       = 16 * 1024 * 1024  // 16MB

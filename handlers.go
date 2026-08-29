@@ -2852,8 +2852,13 @@ func (s *server) SendMessage() http.HandlerFunc {
 		}
 		// Upload the high-res thumbnail so clients render the large preview
 		// card; without these fields only the small inline thumbnail shows.
+		// Bounded with its own timeout: an unbounded upload here can hang the
+		// whole request for minutes if WhatsApp's media servers are slow to
+		// respond, well past what any HTTP client is willing to wait for.
 		if len(og.HQImageData) > 0 {
-			uploaded, upErr := clientManager.GetWhatsmeowClient(txtid).Upload(r.Context(), og.HQImageData, whatsmeow.MediaLinkThumbnail)
+			uploadCtx, cancel := context.WithTimeout(r.Context(), linkPreviewUploadTimeout)
+			uploaded, upErr := clientManager.GetWhatsmeowClient(txtid).Upload(uploadCtx, og.HQImageData, whatsmeow.MediaLinkThumbnail)
+			cancel()
 			if upErr != nil {
 				log.Warn().Err(upErr).Str("url", url).Msg("Failed to upload link preview thumbnail, sending inline thumbnail only")
 			} else {
