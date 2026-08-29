@@ -2846,8 +2846,6 @@ func (s *server) SendMessage() http.HandlerFunc {
 			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text:          proto.String(t.Body),
 				MatchedText:   proto.String(url),
-				Title:         proto.String(og.Title),
-				Description:   proto.String(og.Description),
 				JPEGThumbnail: og.ImageData,
 			},
 		}

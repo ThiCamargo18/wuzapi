@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
+	"image/draw"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
@@ -755,6 +756,31 @@ func fetchOpenGraphData(ctx context.Context, urlStr string) openGraphResult {
 	return result
 }
 
+// cropToSquare returns a centered square crop of img, sized to the shorter
+// of its two dimensions, so callers get a consistent 1:1 aspect ratio no
+// matter the source image's shape.
+func cropToSquare(img image.Image) image.Image {
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	side := w
+	if h < side {
+		side = h
+	}
+	offsetX := bounds.Min.X + (w-side)/2
+	offsetY := bounds.Min.Y + (h-side)/2
+	cropRect := image.Rect(offsetX, offsetY, offsetX+side, offsetY+side)
+
+	if sub, ok := img.(interface {
+		SubImage(r image.Rectangle) image.Image
+	}); ok {
+		return sub.SubImage(cropRect)
+	}
+
+	square := image.NewRGBA(image.Rect(0, 0, side, side))
+	draw.Draw(square, square.Bounds(), img, cropRect.Min, draw.Src)
+	return square
+}
+
 func encodeJPEGThumbnail(img image.Image) []byte {
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: openGraphJpegQuality}); err != nil {
@@ -805,7 +831,13 @@ func fetchOpenGraphImage(ctx context.Context, pageURL *url.URL, imageURLStr stri
 		return
 	}
 
-	hqThumb := resize.Thumbnail(openGraphHQThumbnailDim, openGraphHQThumbnailDim, img, resize.Lanczos3)
+	// Crop to a centered square first so every preview card renders at the
+	// same fixed 1:1 aspect ratio regardless of the source image's shape —
+	// resize.Thumbnail alone preserves the original aspect ratio, which is
+	// why cards used to come out wider or narrower depending on the site.
+	squareImg := cropToSquare(img)
+
+	hqThumb := resize.Thumbnail(openGraphHQThumbnailDim, openGraphHQThumbnailDim, squareImg, resize.Lanczos3)
 	result.HQImageData = encodeJPEGThumbnail(hqThumb)
 	bounds := hqThumb.Bounds()
 	result.HQWidth = uint32(bounds.Dx())
